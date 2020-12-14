@@ -32,12 +32,91 @@
 #include "sim.h"
 
 tCar *SimCarTable = 0;
+tCar *copyTable = 0;
 tdble SimDeltaTime;
 int SimTelemetry;
 static int SimNbCars = 0;
+static int tCarProtect = 1;
 
 tdble rulesFuelFactor = 1.0f;
 tdble rulesDamageFactor = 1.0f;
+void copy(tCar* target, tCar* source);
+
+void loadCarTable(int n){
+	for(int i = 0; i < n; i++){
+		copy(&(SimCarTable[i]), &(copyTable[i]));
+	}
+}
+
+void saveCarTable(int n){
+	for(int i = 0; i < n; i++){
+		copy(&(copyTable[i]), &(SimCarTable[i]));
+	}
+}
+
+
+void copy(tCar* target, tCar* source){
+	target->ctrl = source->ctrl;
+	target->params = source->params;
+	target->carElt->index = source->carElt->index;
+	target->carElt->info = source->carElt->info;
+	target->carElt->pub = source->carElt->pub;
+	target->carElt->race = source->carElt->race;
+	target->carElt->priv = source->carElt->priv;
+	//target->carElt->ctrl = source->carElt->ctrl;
+	//target->carElt->pitcmd = source->carElt->pitcmd;
+	target->carElt->robot = source->carElt->robot;
+	target->carElt->next = source->carElt->next;
+	target->carElt->RESTART = source->carElt->RESTART;
+	target->carElt->RESET = source->carElt->RESET;
+	target->preCtrl = source->preCtrl;
+	for(int i = 0; i < 2; i++){
+		target->axle[i] = source->axle[i];
+	}
+	for(int i = 0; i < 4; i++){
+		target->axle[i] = source->axle[i];	
+	}
+	target->steer = source->steer;
+	target->brkSyst = source->brkSyst;
+	target->aero = source->aero;
+	for(int i = 0; i < 2; i++){
+		target->wing[i] = source->wing[i];
+	}
+	target->transmission = source->transmission;
+	target->engine = source->engine;
+	target->dimension = source->dimension;
+	target->mass = source->mass;
+	target->Minv = source->Minv;
+	target->tank = source->tank;
+	target->statGC = source->statGC;
+	target->Iinv = source->Iinv;
+	target->fuel = source->fuel;
+	target->DynGC = source->DynGC;
+	target->DynGCg = source->DynGCg;
+	target->VelColl = source->VelColl;
+	target->preDynGC = source->preDynGC;
+	target->trkPos = source->trkPos;
+	target->airSpeed2 = source->airSpeed2;
+	target->Cosz = source->Cosz;
+	target->Sinz = source->Sinz;
+	for(int i = 0; i < 4; i++){
+		target->corner[i] = source->corner[i];
+	}
+	target->collision = source->collision;
+	target->normal = source->normal;
+	target->collpos = source->collpos;
+	target->wheelbase = source->wheelbase;
+	target->wheeltrack = source->wheeltrack;
+	memcpy(target->posMat, source->posMat, 4*4*sizeof(float));
+	target->shape = source->shape;
+	target->blocked = source->blocked;
+	target->dammage = source->dammage;
+	target->fakeDammage = source->fakeDammage;
+	target->restPos = source->restPos;
+	target->collisionAware = source->collisionAware;
+	target->speed = source->speed;
+}
+
 
 /*
  * Check the input control from robots
@@ -165,9 +244,11 @@ void SimReConfig(tCarElt *carElt)
 }
 
 
+
 static void
 RemoveCar(tCar *car, tSituation *s)
 {
+	//printf("remove %x %x %x\n", (int)SimCarTable - (int)s, sizeof(tCar), (int)(&(car->dammage))-((int)car));
 	int i;
 	tCarElt *carElt;
 	tTrkLocPos trkPos;
@@ -318,16 +399,29 @@ RemoveCar(tCar *car, tSituation *s)
 void
 SimUpdate(tSituation *s, double deltaTime, int telemetry)
 {
+	static int inited = 0;
+	if(inited == 0){
+		saveCarTable(s->_ncars);
+		inited++;
+	}
+	if(tCarProtect)
+		loadCarTable(s->_ncars);
+	//printf("load finish\n");
 	int i;
 	int ncar;
 	tCarElt *carElt;
 	tCar *car;
-	
+	static int once = 0;
+	car = &(SimCarTable[0]);
+	//if(++once == 1)
+		//printf("remove %x %x %x %x\n", (int)SimCarTable - (int)s, (int)copyTable - (int)s, sizeof(tCar), (int)(&(car->dammage))-((int)car));
 	SimDeltaTime = deltaTime;
 	SimTelemetry = telemetry;
 	for (ncar = 0; ncar < s->_ncars; ncar++) {
 		SimCarTable[ncar].collision = 0;
 		SimCarTable[ncar].blocked = 0;
+		SimCarTable[ncar].dammage = 0;
+		//SimCarTable[ncar].fuel
 	}
 	
 	for (ncar = 0; ncar < s->_ncars; ncar++) {
@@ -433,6 +527,9 @@ SimUpdate(tSituation *s, double deltaTime, int telemetry)
 		carElt->_dammage = car->dammage;
 		carElt->_fakeDammage = car->fakeDammage;		
 	}
+	if(tCarProtect)
+		saveCarTable(s->_ncars);
+	//printf("update finish\n");
 }
 
 
@@ -443,6 +540,10 @@ SimInit(int nbcars, tTrack* track, tdble fuelFactor, tdble damageFactor)
 	rulesDamageFactor = damageFactor;
     SimNbCars = nbcars;
     SimCarTable = (tCar*)calloc(nbcars, sizeof(tCar));
+	copyTable = (tCar*)calloc(nbcars, sizeof(tCar));
+	for(int i = 0; i < nbcars; i++){
+		copyTable[i].carElt = (tCarElt*)calloc(1, sizeof(tCarElt));
+	}
     SimCarCollideInit(track);
 }
 

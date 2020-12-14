@@ -649,6 +649,9 @@ extern int* psave_flag;
 
 int count=0;
 
+static void* driveArray[50];
+static tSituation* stored_s = NULL;
+
 
 static void
 ReOneStep(double deltaTimeIncrement)
@@ -674,6 +677,8 @@ ReOneStep(double deltaTimeIncrement)
     int i;
 	tRobotItf *robot;
 	tSituation *s = ReInfo->s;
+	if(stored_s == NULL)
+		stored_s = s;
 
 	if ((ReInfo->_displayMode != RM_DISP_MODE_NONE) && (ReInfo->_displayMode != RM_DISP_MODE_CONSOLE)) {
 		if (floor(s->currentTime) == -2.0) {
@@ -697,6 +702,10 @@ ReOneStep(double deltaTimeIncrement)
 		ReInfo->_reLastTime = 0.0;
 	}
 
+
+	for (int i = 0; i < s->_ncars; i++) {
+		driveArray[i] = (void*)s->cars[i]->robot->rbDrive;	
+	}
 	START_PROFILE("rbDrive*");
 	if ((s->currentTime - ReInfo->_reLastTime) >= RCM_MAX_DT_ROBOTS) {
 		s->deltaTime = s->currentTime - ReInfo->_reLastTime;
@@ -704,6 +713,15 @@ ReOneStep(double deltaTimeIncrement)
 			if ((s->cars[i]->_state & RM_CAR_STATE_NO_SIMU) == 0) {
 				robot = s->cars[i]->robot;
 				robot->rbDrive(robot->index, s->cars[i], s);
+				if(ReInfo->s != stored_s){
+					ReInfo->s = stored_s;
+				}
+			}
+			for (int j = 0; j < s->_ncars; j++) {
+				if(driveArray[j] != s->cars[j]->robot->rbDrive){
+					s->cars[j]->robot->rbDrive = (tfRbDrive)driveArray[j];
+					//printf("restore %d\n",j);
+				}
 			}
 		}
 		ReInfo->_reLastTime = s->currentTime;
